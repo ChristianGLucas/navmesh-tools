@@ -1,0 +1,19 @@
+name: navmesh-composability-check
+description: Phase-6 deployment composability check — BuildNavMesh -> FindPath edge on deployed private navmesh-tools nodes.
+nodes:
+    - alias: build
+      package: christiangeorgelucas/navmesh-tools@0.1.0
+      node: BuildNavMesh
+      col: 0
+      row: 0
+    - alias: findpath
+      package: christiangeorgelucas/navmesh-tools@0.1.0
+      node: FindPath
+      col: 1
+      row: 0
+edges:
+    - from: build
+      to: findpath
+      adapter:
+        navmesh: navmesh
+start: build
