@@ -1,0 +1,247 @@
+// This file defines the data contracts (messages) for your Axiom package.
+// Every node's --input and --output refers to a message defined here.
+//
+// Run `axiom create message <Name>` to scaffold a new message below.
+// Run `axiom generate` to compile these definitions into language bindings in gen/.
+//
+// DOCUMENTATION
+//   Comments written directly above a message or field declaration are extracted
+//   automatically at publish time and shown in the Axiom registry as documentation.
+//   Write your descriptions there — no separate doc files needed.
+//
+//   Leading comment  (no blank line before the declaration) → registry description ✓
+//   Detached comment (blank line before the declaration)    → ignored by registry  ✗
+//
+// This file is yours to edit. Axiom only appends new message blocks — it never
+// overwrites or removes content you have written.
+
+syntax = "proto3";
+
+package christiangeorgelucas.navmesh_tools;
+
+option java_package = "gen";
+option java_outer_classname = "Messages";
+
+// A 3D point or vector, Y-up (the convention Recast & Detour assume).
+message Vec3 {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// Raw walkable-surface geometry supplied inline by the caller (no URL/file
+// load — geometry is always passed as data, never fetched). A triangle soup:
+// every 3 consecutive `triangles` entries index into `vertices` (3 floats each).
+message Geometry {
+  // Flattened vertex positions: [x0,y0,z0, x1,y1,z1, ...].
+  repeated float vertices = 1;
+  // Flattened triangle indices into vertices, 3 per triangle, 0-based.
+  repeated int32 triangles = 2;
+}
+
+// Agent dimensions and voxelization parameters controlling how the walkable
+// geometry is turned into a navmesh. All fields are in the same world units
+// as the input geometry.
+message AgentConfig {
+  // Agent radius; the navmesh is eroded inward by this amount. Must be > 0.
+  float radius = 1;
+  // Agent height (vertical clearance required to stand). Must be > 0.
+  float height = 2;
+  // Maximum walkable slope, in degrees, in [0, 90).
+  float max_slope_deg = 3;
+  // Maximum ledge/step height the agent can climb without it being a wall.
+  float max_climb = 4;
+  // Voxelization cell size in the horizontal (x/z) plane. Must be > 0.
+  float cell_size = 5;
+  // Voxelization cell height (y axis). Must be > 0.
+  float cell_height = 6;
+}
+
+// A built, queryable navigation mesh, serialized so it can be passed between
+// nodes (BuildNavMesh's output feeds every query node's input). Deterministic:
+// building the same geometry + agent config twice yields byte-identical data.
+message NavMesh {
+  // Serialized recast4j navmesh (opaque binary blob — pass it through unmodified).
+  bytes data = 1;
+  int32 poly_count = 2;
+  int32 vert_count = 3;
+  Vec3 bounds_min = 4;
+  Vec3 bounds_max = 5;
+  // Agent radius/height the mesh was built with — query nodes use these to
+  // derive a sensible default search box when the caller doesn't supply one.
+  float agent_radius = 6;
+  float agent_height = 7;
+}
+
+message BuildNavMeshInput {
+  Geometry geometry = 1;
+  AgentConfig agent = 2;
+}
+
+message BuildNavMeshOutput {
+  bool ok = 1;
+  // Structured error code/message; empty when ok is true. Never a raw exception.
+  string error = 2;
+  NavMesh navmesh = 3;
+}
+
+message FindPathInput {
+  NavMesh navmesh = 1;
+  Vec3 start = 2;
+  Vec3 end = 3;
+}
+
+message FindPathOutput {
+  bool ok = 1;
+  string error = 2;
+  // True when a route (possibly partial) between start and end was found.
+  bool path_found = 3;
+  // True when the returned corridor only reaches as close as possible to
+  // `end` without actually connecting to it (start/end in disjoint regions).
+  bool partial = 4;
+  // The polygon-reference corridor from start to end, in navmesh-tile-local
+  // ids stable for this exact NavMesh — feed this straight into
+  // FindStraightPath's poly_refs field.
+  repeated int64 poly_refs = 5;
+}
+
+message FindStraightPathInput {
+  NavMesh navmesh = 1;
+  Vec3 start = 2;
+  Vec3 end = 3;
+  // The polygon corridor from FindPath.poly_refs.
+  repeated int64 poly_refs = 4;
+}
+
+message FindStraightPathOutput {
+  bool ok = 1;
+  string error = 2;
+  // The actual walkable line as a minimal sequence of waypoint corners
+  // (start, every corridor corner the path bends around, end).
+  repeated Vec3 waypoints = 3;
+}
+
+message RaycastInput {
+  NavMesh navmesh = 1;
+  Vec3 start = 2;
+  Vec3 end = 3;
+}
+
+message RaycastOutput {
+  bool ok = 1;
+  string error = 2;
+  // True when the ray hit a wall/boundary before reaching `end`.
+  bool hit = 3;
+  // Point along the segment where the wall was hit (== end when hit is false).
+  Vec3 hit_point = 4;
+  // Fraction of the start->end segment traveled before the hit, in [0,1]
+  // (1.0 when the ray reached `end` unobstructed).
+  float hit_fraction = 5;
+}
+
+message FindNearestPolyInput {
+  NavMesh navmesh = 1;
+  Vec3 point = 2;
+  // Half-extents of the search box around `point`. Optional — all-zero means
+  // "use a default derived from the navmesh's agent radius/height".
+  Vec3 search_half_extents = 3;
+}
+
+message FindNearestPolyOutput {
+  bool ok = 1;
+  string error = 2;
+  // False when no polygon was found within the search box.
+  bool found = 3;
+  int64 poly_ref = 4;
+  // `point` snapped onto the nearest polygon's surface.
+  Vec3 nearest_point = 5;
+}
+
+message FindRandomPointInput {
+  NavMesh navmesh = 1;
+  // Deterministic PRNG seed — the same seed always yields the same point.
+  int64 seed = 2;
+}
+
+message FindRandomPointOutput {
+  bool ok = 1;
+  string error = 2;
+  int64 poly_ref = 3;
+  Vec3 point = 4;
+}
+
+message FindRandomPointAroundCircleInput {
+  NavMesh navmesh = 1;
+  Vec3 center = 2;
+  float radius = 3;
+  // Deterministic PRNG seed — the same seed always yields the same point.
+  int64 seed = 4;
+}
+
+message FindRandomPointAroundCircleOutput {
+  bool ok = 1;
+  string error = 2;
+  bool found = 3;
+  int64 poly_ref = 4;
+  Vec3 point = 5;
+}
+
+message MoveAlongSurfaceInput {
+  NavMesh navmesh = 1;
+  Vec3 start = 2;
+  Vec3 end = 3;
+}
+
+message MoveAlongSurfaceOutput {
+  bool ok = 1;
+  string error = 2;
+  // `end` constrained to slide along the walkable surface from `start`
+  // (clipped at walls/edges rather than crossing them).
+  Vec3 result_point = 3;
+  // Polygons the slide passed through, start to finish.
+  repeated int64 visited_poly_refs = 4;
+}
+
+message GetPolyHeightInput {
+  NavMesh navmesh = 1;
+  // x/z are used to locate the polygon; y is ignored on input.
+  Vec3 point = 2;
+}
+
+message GetPolyHeightOutput {
+  bool ok = 1;
+  string error = 2;
+  // False when `point` is not over any polygon of the navmesh.
+  bool found = 3;
+  float height = 4;
+  int64 poly_ref = 5;
+}
+
+message QueryPolygonsInBoxInput {
+  NavMesh navmesh = 1;
+  Vec3 center = 2;
+  // Half-extents of the query box. Optional — all-zero means "use a default
+  // derived from the navmesh's agent radius/height".
+  Vec3 half_extents = 3;
+}
+
+message QueryPolygonsInBoxOutput {
+  bool ok = 1;
+  string error = 2;
+  repeated int64 poly_refs = 3;
+}
+
+message BuildAndFindPathInput {
+  Geometry geometry = 1;
+  AgentConfig agent = 2;
+  Vec3 start = 3;
+  Vec3 end = 4;
+}
+
+message BuildAndFindPathOutput {
+  bool ok = 1;
+  string error = 2;
+  bool path_found = 3;
+  bool partial = 4;
+  repeated Vec3 waypoints = 5;
+}

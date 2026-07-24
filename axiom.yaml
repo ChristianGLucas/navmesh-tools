@@ -1,0 +1,86 @@
+name: christiangeorgelucas/navmesh-tools
+version: 0.1.0
+language: java
+description: >-
+  Navigation-mesh generation and pathfinding for game AI / robotics path
+  planning — build a queryable navmesh from raw walkable triangle geometry
+  plus agent radius/height/slope/climb, then query it: shortest polygon
+  corridor, the straightened walkable line through it, raycast-to-first-wall,
+  nearest-polygon snapping, deterministic random point sampling (globally and
+  around a circle), constrained surface sliding, walkable-surface height, and
+  a spatial polygon box query — wrapping recast4j (org.recast4j:recast +
+  org.recast4j:detour), the zlib-licensed pure-Java port of Mikko Mononen's
+  Recast & Detour navmesh toolkit. Every node is stateless and deterministic:
+  the same geometry + agent config always builds a byte-identical navmesh,
+  and every query is a pure function of the (serialized) navmesh and its
+  arguments — no randomness escapes a caller-supplied seed. Geometry is
+  always supplied inline by the caller (no URL/file loading). Distinct from
+  christiangeorgelucas/graph-tools (abstract graph shortest-path over a
+  caller-supplied adjacency structure — no geometry), mesh-tools (3D mesh
+  measurement/repair/booleans, not navigation), and geometry-tools/
+  spatial-tools (2D planar / N-dimensional point-set algorithms) — this
+  package's distinctive capability is building a walkable NAVMESH from raw
+  3D geometry and querying it for agent movement. Crowd/multi-agent
+  simulation, dynamic obstacle rebuilding, and off-mesh connections are
+  out of scope (stateful/advanced authoring concerns) — see the README.
+license: MIT
+author: Christian George Lucas
+tags:
+    - navmesh
+    - pathfinding
+    - navigation-mesh
+    - game-ai
+    - robotics
+    - path-planning
+    - recast
+    - detour
+    - recast4j
+build:
+    maven_deps:
+        - org.recast4j:recast:1.5.8
+        - org.recast4j:detour:1.5.8
+nodes:
+    - name: BuildNavMesh
+      input: BuildNavMeshInput
+      output: BuildNavMeshOutput
+      description: Build a queryable, tiled-internally-but-single-tile navmesh from raw walkable triangle geometry (vertices + triangle indices) and an agent config (radius, height, max slope degrees, max climb, voxel cell size/height). Deterministic — the same geometry+agent always yields a byte-identical serialized navmesh. Rejects degenerate geometry (empty, out-of-range triangle indices, non-finite coordinates) and invalid agent dimensions (non-positive radius/height/cell size) with a structured error rather than crashing.
+    - name: FindPath
+      input: FindPathInput
+      output: FindPathOutput
+      description: Find the shortest polygon-reference corridor across a built navmesh from a start to an end point (each snapped to its nearest polygon first). Returns path_found=false when neither point is near any polygon, and partial=true when the corridor only reaches as close as possible to a disconnected end region. Feed poly_refs straight into FindStraightPath.
+    - name: FindStraightPath
+      input: FindStraightPathInput
+      output: FindStraightPathOutput
+      description: Straighten a FindPath polygon corridor into the actual minimal walkable line — the ordered waypoint corners an agent should walk through, starting at `start` and ending at `end`. On a single flat convex polygon this is exactly the straight segment start->end (two waypoints).
+    - name: Raycast
+      input: RaycastInput
+      output: RaycastOutput
+      description: Cast a ray across the navmesh's walkable surface from `start` toward `end` (start is snapped to its nearest polygon first). Returns hit=true and the boundary hit_point/hit_fraction if a wall or the mesh edge blocks the ray before reaching `end`; hit=false and hit_point==end when the straight line is fully walkable.
+    - name: FindNearestPoly
+      input: FindNearestPolyInput
+      output: FindNearestPolyOutput
+      description: Snap an arbitrary point to the nearest navmesh polygon within a search box (search_half_extents; all-zero defaults to a box derived from the navmesh's agent radius/height). found=false when no polygon lies within the box. A point already interior to a polygon snaps to itself.
+    - name: FindRandomPoint
+      input: FindRandomPointInput
+      output: FindRandomPointOutput
+      description: Sample a uniformly-random point anywhere on the navmesh's walkable surface, seeded by `seed` for determinism — the same navmesh + seed always returns the same polygon and point.
+    - name: FindRandomPointAroundCircle
+      input: FindRandomPointAroundCircleInput
+      output: FindRandomPointAroundCircleOutput
+      description: Sample a uniformly-random reachable point within `radius` of `center`, constrained to the walkable surface connected to the polygon nearest `center`, seeded by `seed` for determinism. found=false when `center` is not near any polygon.
+    - name: MoveAlongSurface
+      input: MoveAlongSurfaceInput
+      output: MoveAlongSurfaceOutput
+      description: Slide from `start` toward `end` constrained to the walkable surface — the result_point is `end` when the straight move stays on the mesh, or the furthest reachable point along the walls otherwise (never crosses a wall/edge). Also returns the polygons visited along the slide.
+    - name: GetPolyHeight
+      input: GetPolyHeightInput
+      output: GetPolyHeightOutput
+      description: Look up the walkable-surface height (y) of the navmesh polygon under a given (x, z) — the polygon nearest `point`'s x/z is located first, then the surface height within it is interpolated. found=false when no polygon covers that x/z.
+    - name: QueryPolygonsInBox
+      input: QueryPolygonsInBoxInput
+      output: QueryPolygonsInBoxOutput
+      description: List every navmesh polygon whose bounds intersect an axis-aligned box (center +/- half_extents; all-zero half_extents defaults to a box derived from the navmesh's agent radius/height).
+    - name: BuildAndFindPath
+      input: BuildAndFindPathInput
+      output: BuildAndFindPathOutput
+      description: One-shot convenience — build a navmesh from geometry+agent and immediately find the straightened walkable path between start and end, for callers who don't need to reuse the navmesh across multiple queries.
