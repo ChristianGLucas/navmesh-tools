@@ -1,5 +1,5 @@
 name: christiangeorgelucas/navmesh-tools
-version: 0.1.0
+version: 0.1.1
 language: java
 description: >-
   Navigation-mesh generation and pathfinding for game AI / robotics path
